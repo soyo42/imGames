@@ -8,6 +8,9 @@ import pickle
 import os
 import logging
 
+CARDS = {1:'strazna', 2:'knaz', 3:'baron', 4:'komorna', 5:'princ', 6:'kral', 7:'hrabenka', 8:'princezna'}
+CARDS_REQUIRING_TARGET = (1, 2, 3, 5, 6)
+
 class Dispatcher:
     '''holds configuration, responsible for dispatching game action to appropriate handler'''
 
@@ -46,15 +49,19 @@ class HeapBox:
 
     _PLAYER_LIST = 'playerList'
     _ACTIVE_PLAYER = 'activePlayer'
+    _TARGET_PLAYER = 'targetPlayer'
     _HEAP = 'heap'
     _STATE = 'state'
+    _HISTORY = 'history'
 
     def __init__(self, rawData):
         self._data = {}
         self._data[HeapBox._PLAYER_LIST] = []
         self._data[HeapBox._ACTIVE_PLAYER] = None
+        self._data[HeapBox._TARGET_PLAYER] = None
         self._data[HeapBox._HEAP] = []
         self._data[HeapBox._STATE] = 'init'
+        self._data[HeapBox._HISTORY] = []
 
         self.isEmpty = rawData == None or rawData.strip() == ''
         if not self.isEmpty:
@@ -75,6 +82,12 @@ class HeapBox:
     def getActivePlayer(self):
         return self._data[HeapBox._ACTIVE_PLAYER]
 
+    def setTargetPlayer(self, playerName):
+        self._data[HeapBox._TARGET_PLAYER] = playerName
+
+    def getTargetPlayer(self):
+        return self._data[HeapBox._TARGET_PLAYER]
+
     def getNextPlayer(self):
         active = self.getActivePlayer()
         allPlayers = self.getPlayerList()
@@ -93,6 +106,12 @@ class HeapBox:
     def getHeap(self):
         return self._data[HeapBox._HEAP]
 
+    def addToHistory(self, player, card, target):
+        historyItem = HistoryItem()
+        historyItem.player = player
+        historyItem.card = card
+        historyItem.target = target
+        self._data[HeapBox._HISTORY].append(historyItem)
 
     def _decode(self, rawData):
         # base64 decode
@@ -113,6 +132,11 @@ class HeapBox:
         out = json.dumps(self._data)
         return out
 
+class HistoryItem:
+    def __init__(self):
+        self.player = None
+        self.card = None
+        self.target = None
 
 class BaseHandler():
     __metaclass__ = ABCMeta
@@ -148,14 +172,16 @@ class BaseHandler():
 
     @staticmethod
     def askForChoice(question, options):
-        print question
+        print '\033[33;1m{}\033[0m'.format(question)
         choice = None
-        while not choice:
+        while choice == None:
             for i in range(len(options)):
-                print '{}. {}'.format(i, options[i])
+                print '{}. {}'.format(i+1, options[i])
             idx = raw_input('Enter choice number: ')
             try:
-                choice = options[int(idx)]
+                choiceIdx = int(idx) - 1
+                justCheckRange = options[choiceIdx]
+                choice = choiceIdx
             except Exception as e:
                 BaseHandler._LOG.warn('answer not understood: {}'.format(e))
         return choice
@@ -237,7 +263,7 @@ class InitHandler(BaseHandler):
 
     @staticmethod
     def createHeap():
-        heap = [1,1,1,1, 2,2, 3,3, 4,4, 5,5, 6,6, 7, 8]
+        heap = [1,1,1,1,1, 2,2, 3,3, 4,4, 5,5, 6, 7, 8]
         InitHandler._LOG.debug('heap created: {}({})'.format(heap, len(heap)))
         random.shuffle(heap)
         return heap
@@ -268,14 +294,49 @@ class TurnHandler(BaseHandler):
 
         heapBox.activePlayer = nextPlayer
         self.drawCard(heapBox)
-        # ask user for action
-        # check and warn (offer fix)
+        # ask user to choose card
+        choice = BaseHandler.askForChoice('Which card would you like to use?', 
+             ['{} [{}]'.format(CARDS[i], i)  for i in self._localContext.hand])
+        cardToUse = self._localContext.hand[choice]
+        TurnHandler._LOG.debug('chosen: {0} -> [{1}]'.format(cardToUse, CARDS[cardToUse]))
+        del(self._localContext.hand[choice])
+
         # optional: offer target
+        if TurnHandler.needsTarget(cardToUse):
+            choice = BaseHandler.askForChoice('Choose target player?', 
+                 heapBox.getPlayerList())
+            targetPlayer = heapBox.getPlayerList()[choice]
+            TurnHandler._LOG.debug('target player: \'{0}\''.format(targetPlayer))
+            if targetPlayer != self._localContext.name:
+                # add to heapBox
+                heapBox.setTargetPlayer(targetPlayer)
+
         # log draw to heapBox
-        
+        self.logAction(heapBox, cardToUse, heapBox.getTargetPlayer())
+
         # send heapBox to next player or target
+        nextPlayer = None
+        if heapBox.getTargetPlayer() != None:
+            nextPlayer = heapBox.getTargetPlayer()
+        else:
+            nextPlayer = heapBox.getNextPlayer()
+
+        TurnHandler._LOG.info('now you need to deliver heapBox to: {0}'.format(targetPlayer))
+
+            # dump
         self.storeLocalContext()
 
+    def logAction(self, heapBox, card, target):
+        # user -> card [-> target ]
+        heapBox.addToHistory(self._localContext.name, card, target)
+
+    @staticmethod
+    def needsTarget(card):
+        needs = False
+        if card in CARDS_REQUIRING_TARGET:
+            needs = True
+
+        return needs
 
 
 if __name__ == '__main__':
