@@ -17,6 +17,7 @@ class Dispatcher:
     _LOGGER = logging.getLogger('imgame.Dispatcher')
     STATE_INIT = 'init'
     STATE_TURN = 'turn'
+    STATE_INTERACTION = 'interaction'
 
     def __init__(self, localStore):
         self.localStore = localStore
@@ -30,6 +31,8 @@ class Dispatcher:
             handler = InitHandler(self)
         elif action == 'turn':
             handler = TurnHandler(self)
+        elif action == 'interac':
+            handler = InteractHandler(self)
         elif action == 'inspect':
             pass
 
@@ -108,10 +111,10 @@ class HeapBox:
 
     def addToHistory(self, player, card, target):
         historyItem = HistoryItem()
-        historyItem.player = player
-        historyItem.card = card
-        historyItem.target = target
-        self._data[HeapBox._HISTORY].append(historyItem)
+        historyItem.setPlayer(player)
+        historyItem.setCard(card)
+        historyItem.setTarget(target)
+        self._data[HeapBox._HISTORY].append(historyItem.toMap())
 
     def _decode(self, rawData):
         # base64 decode
@@ -129,14 +132,39 @@ class HeapBox:
         # marshall json
         # gzip
         # base64 decode
+        #print(self._data)
         out = json.dumps(self._data)
         return out
 
 class HistoryItem:
+    PLAYER = 'player'
+    CARD = 'card'
+    TARGET = 'target'
+    
     def __init__(self):
-        self.player = None
-        self.card = None
-        self.target = None
+        self._data = {}
+
+    def setPlayer(self, player):
+        self._data[HistoryItem.PLAYER] = player
+
+    def setCard(self, card):
+        self._data[HistoryItem.CARD] = card
+
+    def setTarget(self, target):
+        self._data[HistoryItem.TARGET] = target
+
+    def getPlayer(self):
+        return self._data[HistoryItem.PLAYER]
+
+    def getCard(self):
+        return self._data[HistoryItem.CARD]
+
+    def getTarget(self):
+        return self._data[HistoryItem.TARGET]
+
+    def toMap(self):
+        return self._data
+
 
 class BaseHandler():
     __metaclass__ = ABCMeta
@@ -149,6 +177,7 @@ class BaseHandler():
                 self._localContext = pickle.load(storageFile)
             if self._localContext.heapInitStash:
                 BaseHandler._LOG.debug('HEAP STASH in use - you are the firestarter!')
+            BaseHandler._LOG.debug('you are: {}'.format(self._localContext.name))
         else:
             self._localContext = None
 
@@ -310,6 +339,7 @@ class TurnHandler(BaseHandler):
             if targetPlayer != self._localContext.name:
                 # add to heapBox
                 heapBox.setTargetPlayer(targetPlayer)
+                heapBox.setState(Dispatcher.STATE_INTERACTION)
 
         # log draw to heapBox
         self.logAction(heapBox, cardToUse, heapBox.getTargetPlayer())
@@ -321,10 +351,14 @@ class TurnHandler(BaseHandler):
         else:
             nextPlayer = heapBox.getNextPlayer()
 
-        TurnHandler._LOG.info('now you need to deliver heapBox to: {0}'.format(targetPlayer))
+        TurnHandler._LOG.info('now you need to deliver heapBox to: {0}'.format(nextPlayer))
 
-            # dump
+        # dump
         self.storeLocalContext()
+        self.dumpHeapBox(heapBox)
+
+    def interact(self, heapBox):
+        print 'interacting...'
 
     def logAction(self, heapBox, card, target):
         # user -> card [-> target ]
@@ -337,6 +371,7 @@ class TurnHandler(BaseHandler):
             needs = True
 
         return needs
+
 
 
 if __name__ == '__main__':

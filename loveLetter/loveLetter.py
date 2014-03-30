@@ -9,7 +9,7 @@ gameTitle = 'love letter'
 
 defaultLocalStore = '.llStore'
 defaultAction = 'inspect'
-actions = (defaultAction, 'init', 'turn')
+actions = (defaultAction, 'init', 'turn', 'interact')
 
 gameTitleLong = 'IM-game [\033[35;1m{0}\033[0m]'.format(gameTitle)
 usageMsg = '\n{0}\n{1}\nusage:: {2} [-h|--help]'.format(gameTitleLong, 42*'-', sys.argv[0])
